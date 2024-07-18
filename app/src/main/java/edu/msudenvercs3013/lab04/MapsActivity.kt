@@ -10,14 +10,19 @@ import android.location.Location
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.util.Log
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
 import android.widget.Button
 import android.widget.Toast
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.DrawableRes
 import androidx.core.app.ActivityCompat
+import androidx.core.content.ContentProviderCompat.requireContext
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.DrawableCompat
+import androidx.fragment.app.Fragment
 import com.google.android.gms.location.LocationServices
 
 import com.google.android.gms.maps.CameraUpdateFactory
@@ -31,7 +36,7 @@ import com.google.android.gms.maps.model.Marker
 import com.google.android.gms.maps.model.MarkerOptions
 import edu.msudenvercs3013.lab04.databinding.ActivityMapsBinding
 
-class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
+class MapsFragment : Fragment(), OnMapReadyCallback {
 
     private lateinit var binding: ActivityMapsBinding
 
@@ -41,13 +46,70 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
 
     private lateinit var requestPermissionLauncher: ActivityResultLauncher<String>
 
+    private val fusedLocationProviderClient by lazy {
+        LocationServices.getFusedLocationProviderClient(requireContext())
+    }
+
+    override fun onCreateView(
+        inflater: LayoutInflater, container: ViewGroup?,
+        savedInstanceState: Bundle?
+    ): View? {
+        binding = ActivityMapsBinding.inflate(inflater, container, false)
+        return binding.root
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+
+        // Obtain the SupportMapFragment and get notified when the map is ready to be used.
+        val mapFragment = childFragmentManager.findFragmentById(R.id.map) as SupportMapFragment
+        mapFragment.getMapAsync(this)
+
+        requestPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
+            if (isGranted) {
+                getLocation { updateMapLocation(it) }
+            } else {
+                showPermissionRationale {
+                    requestPermissionLauncher.launch(ACCESS_FINE_LOCATION)
+                }
+            }
+        }
+
+        val buttonParkedHere: Button = view.findViewById(R.id.button_parked_here)
+        buttonParkedHere.setOnClickListener {
+            parkedLocation?.let {
+                updateMapLocation(it)
+            } ?: run {
+                Toast.makeText(requireContext(), "Please place a marker on the map first.", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    override fun onMapReady(googleMap: GoogleMap) {
+        mMap = googleMap.apply {
+            setOnMapClickListener { latLng ->
+                addOrMoveSelectedPositionMarker(latLng)
+            }
+        }
+
+        when {
+            hasLocationPermission() -> getLocation{updateMapLocation(it)}
+            shouldShowRequestPermissionRationale(ACCESS_FINE_LOCATION) -> {
+                showPermissionRationale {
+                    requestPermissionLauncher.launch(ACCESS_FINE_LOCATION)
+                }
+            }
+            else -> requestPermissionLauncher.launch(ACCESS_FINE_LOCATION)
+        }
+    }
+
     private fun getLocation(onLocationReceived: (LatLng) -> Unit) {
-        if (ActivityCompat.checkSelfPermission(
-                this,
+        if (ContextCompat.checkSelfPermission(
+                requireContext(),
                 ACCESS_FINE_LOCATION
             ) != PackageManager.PERMISSION_GRANTED &&
-            ActivityCompat.checkSelfPermission(
-                this,
+            ContextCompat.checkSelfPermission(
+                requireContext(),
                 android.Manifest.permission.ACCESS_COARSE_LOCATION
             ) != PackageManager.PERMISSION_GRANTED
         ) {
@@ -63,7 +125,7 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
     }
 
 
-        private fun updateMapLocation(location: LatLng) {
+    private fun updateMapLocation(location: LatLng) {
         mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(location, 7f))
     }
 
@@ -75,9 +137,8 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
             .apply { markerIcon?.let { icon(markerIcon) } }
     )
 
-    private fun getBitmapDescriptorFromVector(@DrawableRes
-                                              vectorDrawableResourceId: Int): BitmapDescriptor? {
-        val bitmap = ContextCompat.getDrawable(this,
+    private fun getBitmapDescriptorFromVector(@DrawableRes vectorDrawableResourceId: Int): BitmapDescriptor? {
+        val bitmap = ContextCompat.getDrawable(requireContext(),
             vectorDrawableResourceId)?.let { vectorDrawable ->
             vectorDrawable.setBounds(0, 0,
                 vectorDrawable.intrinsicWidth,
@@ -101,7 +162,7 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
 
     private fun addOrMoveSelectedPositionMarker(latLng: LatLng) {
         if (marker == null) {
-            marker = addMarkerAtLocation(latLng, "Your Car", getBitmapDescriptorFromVector(R.drawable.target_icon))
+            marker = addMarkerAtLocation(latLng, "Your Car", getBitmapDescriptorFromVector(R.drawable.car_icon))
         } else {
             marker?.position = latLng
         }
@@ -109,13 +170,13 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
     }
 
     private fun hasLocationPermission() =
-        ContextCompat.checkSelfPermission(this, ACCESS_FINE_LOCATION) ==
+        ContextCompat.checkSelfPermission(requireContext(), ACCESS_FINE_LOCATION) ==
                 PackageManager.PERMISSION_GRANTED
 
     private fun showPermissionRationale(
         positiveAction: () -> Unit
     ) {
-        AlertDialog.Builder(this)
+        AlertDialog.Builder(requireContext())
             .setTitle("Location permission")
             .setMessage("We need your permission to find your current position")
             .setPositiveButton(android.R.string.ok) { _, _ ->
@@ -127,44 +188,6 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
             .create().show()
     }
 
-    private val fusedLocationProviderClient by lazy {
-        LocationServices.getFusedLocationProviderClient(this)
-    }
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-
-        binding = ActivityMapsBinding.inflate(layoutInflater)
-        setContentView(binding.root)
-
-        // Obtain the SupportMapFragment and get notified when the map is ready to be used.
-        val mapFragment = supportFragmentManager
-            .findFragmentById(R.id.map) as SupportMapFragment
-        mapFragment.getMapAsync(this)
-
-        requestPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
-                isGranted ->
-            if (isGranted) {
-                getLocation{updateMapLocation(it)}
-            } else {
-                showPermissionRationale {
-                    requestPermissionLauncher.launch(ACCESS_FINE_LOCATION)
-                }
-            }
-        }
-
-        val buttonParkedHere: Button = findViewById(R.id.button_parked_here)
-        buttonParkedHere.setOnClickListener {
-            parkedLocation?.let {
-                updateMapLocation(it)
-            } ?: run {
-                Toast.makeText(this, "Please place a marker on the map first.", Toast.LENGTH_SHORT).show()
-            }
-        }
-
-
-    }
-
     /**
      * Manipulates the map once available.
      * This callback is triggered when the map is ready to be used.
@@ -174,26 +197,4 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
      * it inside the SupportMapFragment. This method will only be triggered once the user has
      * installed Google Play services and returned to the app.
      */
-    override fun onMapReady(googleMap: GoogleMap) {
-        mMap = googleMap.apply {
-            setOnMapClickListener { latLng ->
-                addOrMoveSelectedPositionMarker(latLng)
-            }
-        }
-
-        when {
-            hasLocationPermission() -> getLocation{updateMapLocation(it)}
-            shouldShowRequestPermissionRationale(ACCESS_FINE_LOCATION) -> {
-                showPermissionRationale {
-                    requestPermissionLauncher.launch(ACCESS_FINE_LOCATION)
-                }
-            }
-            else -> requestPermissionLauncher.launch(ACCESS_FINE_LOCATION)
-        }
-    }
-
-        // Add a marker in Sydney and move the camera
-        //val sydney = LatLng(-34.0, 151.0)
-        //mMap.addMarker(MarkerOptions().position(sydney).title("Marker in Sydney"))
-        //mMap.moveCamera(CameraUpdateFactory.newLatLng(sydney))
 }
