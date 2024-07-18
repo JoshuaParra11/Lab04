@@ -11,6 +11,7 @@ import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.util.Log
 import android.widget.Button
+import android.widget.Toast
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.DrawableRes
@@ -36,6 +37,7 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
 
     private lateinit var mMap: GoogleMap
     private var marker: Marker? = null
+    private var parkedLocation: LatLng? = null
 
     private lateinit var requestPermissionLauncher: ActivityResultLauncher<String>
 
@@ -99,10 +101,11 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
 
     private fun addOrMoveSelectedPositionMarker(latLng: LatLng) {
         if (marker == null) {
-            marker = addMarkerAtLocation(latLng, "Deploy here",
-                getBitmapDescriptorFromVector(R.drawable.target_icon)
-            )
-        } else { marker?.apply { position = latLng } }
+            marker = addMarkerAtLocation(latLng, "Your Car", getBitmapDescriptorFromVector(R.drawable.target_icon))
+        } else {
+            marker?.position = latLng
+        }
+        parkedLocation = latLng
     }
 
     private fun hasLocationPermission() =
@@ -152,9 +155,10 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
 
         val buttonParkedHere: Button = findViewById(R.id.button_parked_here)
         buttonParkedHere.setOnClickListener {
-            getLocation { userLocation ->
-                addOrMoveSelectedPositionMarker(userLocation)
-                updateMapLocation(userLocation)
+            parkedLocation?.let {
+                updateMapLocation(it)
+            } ?: run {
+                Toast.makeText(this, "Please place a marker on the map first.", Toast.LENGTH_SHORT).show()
             }
         }
 
